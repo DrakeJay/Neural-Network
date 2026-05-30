@@ -500,7 +500,7 @@ b32 mat_softmax_add_grade(matrix* out, const matrix* softmax_out, const matrix* 
     for (u32 i = 0; i < size; i++) {
         for (u32 j = 0; j < size; j ++){
             jacobian->data[j + i * size] = 
-                softmax_out->data[i] * ((i = j) - softmax_out->data[j]);
+                softmax_out->data[i] * ((i == j) - softmax_out->data[j]);
         }
     }
 
@@ -642,7 +642,114 @@ model_var* mv_cross_entropy(mem_arena* arena, model_context* model, model_var* p
     return _mv_binary_impl(arena, model, p,q ,p->val->rows, q->val->cols, flags, MV_OP_CROSS_ENTROPY);
 }
 
+model_program model_prog_create(mem_arena* arena, model_context* model, model_var* out_var){
+    mem_arena_temp scratch = arena_scratch_get(&arena, 1);
+    
+    b8* visited = PUSH_ARRAY(scratch.arena, b8, model->num_vars);
+    
+    u32 stack_size = 0;
+    u32 out_size = 0;
+    model_var** stack = PUSH_ARRAY(scratch.arena, model_var*, model->num_vars);
+    model_var** out = PUSH_ARRAY(scratch.arena,model_var*, model->num_vars);
 
+    stack[stack_size++] = out_var;
+
+    while (stack_size > 0) {
+        model_var* cur = stack[--stack_size];
+
+        if (cur->index >= model->num_vars) {continue; }
+
+        if (visited[cur->index]) {
+            if (out_size < model->num_vars) {
+                out[out_size++] = cur;
+            }
+           continue;
+        }
+        
+        visited[cur->index] = true;
+        
+        if (stack_size < model->num_vars) {
+            stack[stack_size++] = cur;
+        }
+        
+        u32 num_inputs = MV_NUM_INPUTS(cur->op);
+        for (u32 i = 0; i <num_inputs; i++) {
+            model_var* input = cur->inputs[i];
+
+            if (input->index >= model->num_vars || visited[input->index]) {
+                continue;
+            }
+
+            for (u32 j = 0; j < stack_size; j++) {
+                if (stack[j] == input) {
+                    for (u32 k = j; k < stack_size-1; k++) {
+                        stack[k] = stack[k+1];
+
+                    }
+                    stack_size--;
+                }
+            }
+            
+            if (stack_size < model->num_vars) {
+                stack[stack_size++] = input;
+            }
+        }
+    }
+    model_program prog = {
+        .size = out_size,
+        .vars = PUSH_ARRAY_NZ(arena, model_var*,out_size)
+    };
+    
+    memcpy(prog.vars, out, sizeof(model_var*) * out_size);
+    
+    arena_scratch_release(scratch);
+    
+    return prog;
+}
+
+////TODO ------------ MODEL PROG COMPUTE 
+void model_prog_compute_grads(model_program* prog){
+    for (u32 i = 0; i < prog->size - 1; i++) {
+        model_var* cur = prog->vars[i];
+    
+        if ((cur->FLAGS & MV_FLAG_REQUIRES_GRAD) != MV_FLAG_REQUIRES_GRAD){
+            continue;
+        }
+        if (cur->flags * MV_FLAG_PARAMETER) {
+            continue;
+        }
+        mat_clear(cur->grad);
+    }
+
+    mat_fill(prog->vars[prog->size-1]->grad, 1.0f);
+    
+    for (i64 i = (i64)prog->size - 1; i>= 0; i--){
+        model_var* cur = prog->vars[i];
+        
+        if ((cur->flags & MV_FLAG_REQUIRES_GRAD) == 0){
+            continue;
+}
+        model_var* a = cur->inputs[0];
+        model_var* b = cur->inputs[1];
+        
+        u32 num_inputs = MV_NUM_INPUTS(cur->op);
+        
+        if (
+            num_inputs == 1 &&
+            (a->flags & MV_FLAG_REQUIRES_GRAD) != MV_FLAG_REQUIRES_GRAD &&
+            (b->flags & MV_FLAG_REQUIRES_GRAD) != MV_FLAG_REQUIRES_GRAD)
+        {
+            continue;}
+}
+        switch (cur->op) {
+            case MV_OP_NULL;
+
+}
+    
+)
+}
+
+//// TODO MODEL COMPUTE GRADS
 
 
 
