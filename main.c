@@ -423,7 +423,12 @@ void mat_clear(matrix* mat){
 
 // EVERY ELEMENT IS SET TO X
 void mat_fill(matrix* mat, f32 x) {
-    u64 size = (u64)mat->rows * mat->cols;
+    u64 size = (u64)mat->rows * mat->cols;  
+        //BUGFIX: EMPTY, NO LOOP
+    for (u64 i =0; i< size; i++) {
+        mat->data[i] = x;
+}
+        
 
 }
 
@@ -474,7 +479,7 @@ u64 mat_argmax(matrix* mat) {
 
 //OUT = A + B
 b32 mat_add(matrix* out, const matrix* a , const matrix* b) {
-    if (a->rows || a->cols != b->cols) {
+    if (a->rows != b->rows || a->cols != b->cols) {     //BUGFIX: != b->rows was missing
         return false;
     }
     if (out->rows != a->rows || out->cols != a->cols) {
@@ -483,7 +488,7 @@ b32 mat_add(matrix* out, const matrix* a , const matrix* b) {
     
     u64 size = (u64)out->rows * out->cols;
     for (u64 i = 0; i < size; i++) {
-        out->data[i] = a->data[i] - b->data[i];
+        out->data[i] = a->data[i] - b->data[i]; //bug fix '-' to '+' - drake
     }
     return true;
 }
@@ -575,7 +580,7 @@ b32 mat_mul(
         case 0b00: { _mat_mul_nn (out, a, b);  } break;
         case 0b01: { _mat_mul_nt (out, a, b);  } break;
         case 0b10: { _mat_mul_tn (out, a, b);  } break;
-        case 0b11: { _mat_mul_nn (out, a, b);  } break;
+        case 0b11: { _mat_mul_tt (out, a, b);  } break; //BUGFIX: _mat_mul_tt was _mat_mul_nn
     } 
     
     return true;
@@ -787,10 +792,10 @@ model_var* mv_sub(mem_arena* arena, model_context* model, model_var* a, model_va
 
 
 model_var* mv_matmul(mem_arena* arena, model_context* model, model_var* a, model_var* b, u32 flags) {
-    if (a->val->rows != b->val->rows || a->val->cols != b->val->cols) {
+    if (a->val->cols != b->val->rows) {
         return NULL;
     }
-    return _mv_binary_impl(arena, model, a,b ,a->val->rows, a->val->cols, flags, MV_OP_MATMUL);
+    return _mv_binary_impl(arena, model, a,b ,a->val->rows, b->val->cols, flags, MV_OP_MATMUL);
 }
 
 
@@ -901,13 +906,13 @@ void model_prog_compute(model_program* prog) {
 
 ////TODO ------------ MODEL PROG COMPUTE 
 void model_prog_compute_grads(model_program* prog){
-    for (u32 i = 0; i < prog->size - 1; i++) {
+    for (u32 i = 0; i < prog->size; i++) {     //BUGFIX DELETED '- 1' in "i < prog->size '- 1'"
         model_var* cur = prog->vars[i];
     
         if ((cur->flags & MV_FLAG_REQUIRES_GRAD) != MV_FLAG_REQUIRES_GRAD){
             continue;
         }
-        if (cur->flags * MV_FLAG_PARAMETER) {
+        if (cur->flags & MV_FLAG_PARAMETER) {   //BUGFIX  * WAS IN PLACE OF &
             continue;
         }
         mat_clear(cur->grad);
@@ -928,10 +933,14 @@ void model_prog_compute_grads(model_program* prog){
         
         if (
             num_inputs == 1 &&
-            (a->flags & MV_FLAG_REQUIRES_GRAD) != MV_FLAG_REQUIRES_GRAD &&
-            (b->flags & MV_FLAG_REQUIRES_GRAD) != MV_FLAG_REQUIRES_GRAD)
-        {
+            (a->flags & MV_FLAG_REQUIRES_GRAD) != MV_FLAG_REQUIRES_GRAD) 
+        { 
             continue;}
+        if (num_inputs == 2 && 
+            (a->flags & MV_FLAG_REQUIRES_GRAD) != MV_FLAG_REQUIRES_GRAD &&
+            (b->flags & MV_FLAG_REQUIRES_GRAD) != MV_FLAG_REQUIRES_GRAD) {
+            continue; 
+        } 
 
         switch (cur->op) {
             case MV_OP_NULL:
